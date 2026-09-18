@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Uygulama simgesine uzun basınca çıkan kısayollar. Niyet MainActivity'ye
+     özel bir eylemle gelir (veri adresi değil): Flutter'ın derin bağlantısı
+     adresi route sanıp açmaya kalkmasın. -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="scan"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_scan"
+        android:shortcutShortLabel="@string/shortcut_scan"
+        android:shortcutLongLabel="@string/shortcut_scan_long">
+        <intent
+            android:action="com.envanter.envanter.SHORTCUT"
+            android:targetPackage="com.envanter.envanter"
+            android:targetClass="com.envanter.envanter.MainActivity">
+            <extra android:name="shortcut" android:value="scan" />
+        </intent>
+    </shortcut>
+    <shortcut
+        android:shortcutId="search"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_search"
+        android:shortcutShortLabel="@string/shortcut_search"
+        android:shortcutLongLabel="@string/shortcut_search_long">
+        <intent
+            android:action="com.envanter.envanter.SHORTCUT"
+            android:targetPackage="com.envanter.envanter"
+            android:targetClass="com.envanter.envanter.MainActivity">
+            <extra android:name="shortcut" android:value="search" />
+        </intent>
+    </shortcut>
+    <shortcut
+        android:shortcutId="new_item"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_add"
+        android:shortcutShortLabel="@string/shortcut_new_item"
+        android:shortcutLongLabel="@string/shortcut_new_item_long">
+        <intent
+            android:action="com.envanter.envanter.SHORTCUT"
+            android:targetPackage="com.envanter.envanter"
+            android:targetClass="com.envanter.envanter.MainActivity">
+            <extra android:name="shortcut" android:value="new_item" />
+        </intent>
+    </shortcut>
+</shortcuts>

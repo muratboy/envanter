@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="shortcut_scan">QR okut</string>
+    <string name="shortcut_scan_long">QR kodu okut</string>
+    <string name="shortcut_search">Ara</string>
+    <string name="shortcut_search_long">Envanterde ara</string>
+    <string name="shortcut_new_item">Yeni eşya</string>
+    <string name="shortcut_new_item_long">Yeni eşya ekle</string>
+    <string name="widget_shopping_label">Alışveriş listesi</string>
+    <string name="widget_shopping_description">Tükenen, azalan ve tarihi geçen eşyalar</string>
+    <string name="widget_shopping_open">Listenin gelmesi için Envanter\'i bir kez aç</string>
+    <string name="widget_preview_milk">Süt</string>
+    <string name="widget_preview_past">tarihi geçti</string>
+    <string name="widget_preview_batteries">Kalem pil</string>
+    <string name="widget_preview_out">tükendi</string>
+    <string name="widget_preview_detergent">Deterjan</string>
+    <string name="widget_preview_left">2 kaldı</string>
+</resources>

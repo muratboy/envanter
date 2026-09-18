@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Eklerin (envanter klasöründeki files/ ve images/) başka uygulamalara
+     verilebildiği kök. Flutter'ın belgeler klasörü "app_flutter"; FileProvider'ın
+     hazır kökleri arasında yok, bu yüzden files/ üzerinden göreli verilir. -->
+<paths>
+    <files-path name="envanter" path="../app_flutter/" />
+</paths>

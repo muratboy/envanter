@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Yalnızca Android'in gösterdiği metinler (ana ekran kısayolları); uygulamanın
+     kendi metinleri lib/core/strings.dart'ta. Cihaz dili izlenir. -->
+<resources>
+    <string name="shortcut_scan">Scan QR</string>
+    <string name="shortcut_scan_long">Scan a QR code</string>
+    <string name="shortcut_search">Search</string>
+    <string name="shortcut_search_long">Search the inventory</string>
+    <string name="shortcut_new_item">New item</string>
+    <string name="shortcut_new_item_long">Add a new item</string>
+    <!-- Ana ekran widget'ı; listenin kendisi uygulamadan, onun dilinde gelir. -->
+    <string name="widget_shopping_label">Shopping list</string>
+    <string name="widget_shopping_description">What ran out, is running low or is past its date</string>
+    <string name="widget_shopping_open">Open Envanter once to fill the list</string>
+    <string name="widget_preview_milk">Milk</string>
+    <string name="widget_preview_past">past its date</string>
+    <string name="widget_preview_batteries">AA batteries</string>
+    <string name="widget_preview_out">out of stock</string>
+    <string name="widget_preview_detergent">Detergent</string>
+    <string name="widget_preview_left">2 left</string>
+</resources>

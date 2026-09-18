@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="ic_launcher_background">#C4552F</color>
+    <!-- Uygulamanın kağıt zemini; açılışta beyaz bir parlama olmasın. -->
+    <color name="splash_background">#F2EDE4</color>
+    <!-- Ana ekran kısayolları: kağıt zeminde kiremit glif. -->
+    <color name="shortcut_background">#F2EDE4</color>
+    <color name="shortcut_glyph">#C4552F</color>
+    <!-- Ana ekran widget'ı (alışveriş listesi): uygulamanın açık tema renkleri. -->
+    <color name="widget_background">#FBF9F5</color>
+    <color name="widget_ink">#1E1B18</color>
+    <color name="widget_muted">#6E665C</color>
+    <color name="widget_accent">#C4552F</color>
+    <color name="widget_on_accent">#FFFFFF</color>
+    <color name="widget_low">#D69A12</color>
+    <color name="widget_expired">#C0392B</color>
+</resources>

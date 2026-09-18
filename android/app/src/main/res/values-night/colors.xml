@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="splash_background">#14120F</color>
+    <!-- Ana ekran widget'ı: uygulamanın koyu tema renkleri. -->
+    <color name="widget_background">#1D1A16</color>
+    <color name="widget_ink">#F2ECE2</color>
+    <color name="widget_muted">#B2A99C</color>
+    <color name="widget_accent">#E5835F</color>
+    <color name="widget_on_accent">#1E1B18</color>
+    <color name="widget_low">#E9B43A</color>
+    <color name="widget_expired">#F0877A</color>
+</resources>
