@@ -204,7 +204,8 @@ Bir kartoteks ya da arşiv dolabı: renkli olan yalnızca kartların kendisi,
   çift dokunuş dokunulan yere yakınlaşır ya da geri döner, tek dokunuş üst çubuğu
   gizler; geri tuşu ya da ✕ kapatır. Toplu seçim açıkken dokunuş seçimi değiştirir.
 - Konum: klasörde dünyadaki yeri (GPS, otomatik ya da elle); eşyada ise hangi
-  klasörde durduğu (yer seçiciden seçilir, aşağıda).
+  klasörde durduğu (yer seçiciden seçilir, aşağıda). Konumu Android'in kendi konum hizmeti
+  verir, Google Play Hizmetleri gerekmez.
 - **Ölçü birimi:** Adet bölümünde isteğe bağlı ölçü birimi seçilebilir (adet, kg, g, lt, m,
   cm, kutu, paket vb. ya da elle yazılan özel birim). Kartlarda, odak görünümünde ve dökümlerde
   sayıyla birlikte görünür ("5 kg", "12 paket").
@@ -387,8 +388,9 @@ Bir kartoteks ya da arşiv dolabı: renkli olan yalnızca kartların kendisi,
 - **Seri sayım modu:** Aramadaki tarayıcının üst çubuğundaki liste simgesiyle açılır. Sayfadan
   çıkmadan barkodlar art arda okutulabilir; kayıtlı eşyanın stoğu her okutuşta anında 1 artırılır
   (kartın + düğmesi gibi: paketli eşyada en yeni pakete, adedi tutulmayan eşyada 1'den başlar),
-  ekranda güncel adet ve eşya adı gösterilir. Klasörün ve çöpteki kaydın adedi değişmez. Sayımın ve
-  düzenleyicinin tarayıcısında bu düğme yok.
+  ekranda güncel adet ve eşya adı gösterilir. Barkod kameranın önünde durdukça bir kez sayılır; aynı
+  üründen birkaç tane varsa her birini ayrı göster (arada barkod en az bir saniye görünmesin).
+  Klasörün ve çöpteki kaydın adedi değişmez. Sayımın ve düzenleyicinin tarayıcısında bu düğme yok.
 - **Hızlı sayım & denetim sihirbazı:** Klasörün ⋮ menüsünden, ana ekran üst menüsünden ya da
   sol çekmeceden **Sayım / denetim** seçilerek başlatılır. Belirli bir klasör (açılan seçicide
   klasöre girip **Burayı say**) veya tüm envanter kapsamında beklenen eşyalar listelenir. Kamera ile
@@ -402,7 +404,8 @@ Bir kartoteks ya da arşiv dolabı: renkli olan yalnızca kartların kendisi,
 - Tarayıcı kamerayı kendi yönetir: ekrandan çıkarken kamerayı bırakır, uygulama
   arka plandan dönünce yeniden açar, bir sonraki tarama önceki ekranın kamerayı
   bırakmasını bekler. Açılamazsa ham hata yerine kısa bir açıklama ve **Yeniden
-  dene** çıkar.
+  dene** çıkar. Kodları telefonun içinde açık kaynak zxing-cpp okur; tarama sırasında
+  internete hiçbir şey gitmez.
 
 **Görüntüyle arama**
 - Aramadaki **Görüntüyle ara**: elindeki eşyanın fotoğrafını çekersin (ya da
@@ -923,10 +926,12 @@ Birkaç yer beklenmedik görünebilir, hepsi bilerek:
 - **Metin soran pencereler `showTextPrompt` ile açılıyor.** Kontrolcüleri pencerenin
   kendi yaşam döngüsünde tutuluyor; aksi halde kapanış animasyonunda çöküyordu.
 
-`MainActivity` birkaç küçük yerel iş yapıyor: kamera iznini istemek, ortak kullanım
+`MainActivity` birkaç küçük yerel iş yapıyor: kamera iznini istemek, konumu almak
+(izni de sorarak, Android'in kendi konum hizmetinden), ortak kullanım
 açıkken Wi-Fi yayın kilidini tutmak, yedek dosyasını seçtirmek, sağ kenarın bir
 bölümünü sistemin geri hareketinden hariç tutmak ve ana ekran kısayolundan
 gelindiyse hangisi olduğunu saklamak (Flutter hazır olunca `takeShortcut` ile alır).
+Tarayıcının kameradan gelen kareleri de yerelde okunur (`PlatformCalls`, zxing-cpp).
 Kısayol niyeti bir veri adresiyle değil özel bir eylemle (`com.envanter.envanter.SHORTCUT`)
 gelir: Flutter'ın derin bağlantı desteği adresi bir route sanıp açmaya kalkmasın.
 

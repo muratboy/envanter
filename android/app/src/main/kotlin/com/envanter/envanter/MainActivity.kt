@@ -1,13 +1,20 @@
 package com.envanter.envanter
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Rect
+import android.location.Location
+import android.location.LocationManager
 import android.os.Build
 import android.os.Bundle
+import android.os.CancellationSignal
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
 import android.net.Uri
 import android.provider.DocumentsContract
 import android.provider.OpenableColumns
@@ -15,6 +22,7 @@ import android.webkit.MimeTypeMap
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
+import androidx.core.location.LocationManagerCompat
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -27,8 +35,8 @@ class AttachmentProvider : FileProvider()
 /**
  * Flutter'ın doğrudan yapamadığı birkaç yerel iş:
  *
- * 1. Kamera izni. QR okuyucu CAMERA iznini tanımladığı için image_picker'ın
- *    kamera akışı da iznin verilmiş olmasını bekliyor.
+ * 1. Kamera izni. Uygulama CAMERA iznini tanımladığı için (tarayıcı, seri ekleme)
+ *    image_picker'ın kamera akışı da iznin verilmiş olmasını bekliyor.
  *
  * 2. Ortak kullanım açıkken Wi-Fi yayın kilidi. Pek çok Wi-Fi yongası güç
  *    tasarrufunda yayın/çoklu yayın paketlerini süzüyor; kilit tutulmazsa
@@ -62,6 +70,8 @@ class AttachmentProvider : FileProvider()
  *
  * 10. Seri ekleme için galeriden birden çok fotoğraf: yalnızca adresleri ve adları
  *    döner, fotoğraflar sonra tek tek alınır ([PlatformCalls] "importImage").
+ *
+ * 11. Konum: izin ve konumun kendisi, Android'in kendi konum hizmetinden ("currentLocation").
  *
  * Etkinlik gerektirmeyen işler (yayın kilidi, yedek yazma, widget, saat)
  * [PlatformCalls]'ta: arka plan motoru da onları kullanır.
@@ -128,6 +138,7 @@ class MainActivity : FlutterActivity() {
                 if (PlatformCalls.handle(applicationContext, call, result)) return@setMethodCallHandler
                 when (call.method) {
                     "ensureCamera" -> ensureCamera(result)
+                    "currentLocation" -> currentLocation(result)
                     // Arka planda açılmış motor veritabanını bıraksın, sonra açılış sürsün.
                     "waitBackgroundIdle" -> BackgroundJob.whenIdle { result.success(null) }
                     "pickFile" -> pickFile(result)
@@ -188,11 +199,108 @@ class MainActivity : FlutterActivity() {
         grantResults: IntArray,
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == LOCATION_REQUEST) return onLocationPermission(grantResults)
         if (requestCode != CAMERA_REQUEST) return
         val granted = grantResults.isNotEmpty() &&
             grantResults[0] == PackageManager.PERMISSION_GRANTED
         permissionResult?.success(granted)
         permissionResult = null
+    }
+
+    // ------------------------------------------------------------ konum
+
+    private var locationResult: MethodChannel.Result? = null
+
+    /**
+     * Konum Android'in kendi konum hizmetinden: Google Play Hizmetleri'nin konum kütüphanesi (geolocator)
+     * kapalı kaynaktı, uygulamayı F-Droid'in dışında bırakıyordu. Sıra eskisi gibi: konum kapalıysa "off";
+     * izin yoksa sorulur, verilmezse "denied" (bir daha sorulamıyorsa "deniedForever"); sonra konum.
+     */
+    private fun currentLocation(result: MethodChannel.Result) {
+        val manager = getSystemService(LOCATION_SERVICE) as LocationManager
+        if (!LocationManagerCompat.isLocationEnabled(manager)) return result.success(mapOf("error" to "off"))
+        if (hasLocationPermission()) return locate(manager, result)
+        // Bekleyen bir istek varsa yanıtsız kalmasın.
+        locationResult?.success(mapOf("error" to "denied"))
+        locationResult = result
+        ActivityCompat.requestPermissions(
+            this,
+            arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION),
+            LOCATION_REQUEST,
+        )
+    }
+
+    private fun hasLocationPermission(): Boolean =
+        listOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION).any {
+            ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
+        }
+
+    private fun onLocationPermission(grantResults: IntArray) {
+        val result = locationResult ?: return
+        locationResult = null
+        // Yaklaşık konum izni de yeter (Android 12+ kullanıcıya ikisini birden sorar).
+        if (grantResults.any { it == PackageManager.PERMISSION_GRANTED }) {
+            return locate(getSystemService(LOCATION_SERVICE) as LocationManager, result)
+        }
+        // Sistem artık açıklama göstermeyi önermiyorsa izin bir daha sorulamaz (iki kez reddedildi ya da
+        // "bir daha sorma"): kullanıcı ancak ayarlardan verebilir.
+        val again = ActivityCompat.shouldShowRequestPermissionRationale(this, Manifest.permission.ACCESS_FINE_LOCATION)
+        result.success(mapOf("error" to if (again) "denied" else "deniedForever"))
+    }
+
+    /**
+     * İlk gelen konum: telefonda açık olan sağlayıcıların hepsine birden sorulur (Android 12+ birleşik
+     * sağlayıcı, GPS, ağ). Yalnızca GPS beklenseydi ev içinde dakikalarca sürebilirdi. [LOCATION_WAIT]
+     * içinde gelmezse son bilinen konum (en çok [LOCATION_FRESH] önceki), o da yoksa "unavailable".
+     */
+    @SuppressLint("MissingPermission")
+    private fun locate(manager: LocationManager, result: MethodChannel.Result) {
+        val fine = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) ==
+            PackageManager.PERMISSION_GRANTED
+        val providers = buildList {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) add(LocationManager.FUSED_PROVIDER)
+            // Yalnızca yaklaşık konum izniyle GPS'e sorulamaz.
+            if (fine) add(LocationManager.GPS_PROVIDER)
+            add(LocationManager.NETWORK_PROVIDER)
+        }.filter { runCatching { manager.isProviderEnabled(it) }.getOrDefault(false) }
+        val handler = Handler(Looper.getMainLooper())
+        val signal = CancellationSignal()
+        var answered = false
+        var waiting = providers.size
+        fun answer(location: Location?) {
+            if (answered) return
+            answered = true
+            signal.cancel()
+            handler.removeCallbacksAndMessages(null)
+            val found = location ?: lastKnown(manager, providers)
+            result.success(
+                if (found == null) mapOf("error" to "unavailable")
+                else mapOf("lat" to found.latitude, "lng" to found.longitude),
+            )
+        }
+        if (providers.isEmpty()) return answer(null)
+        handler.postDelayed({ answer(null) }, LOCATION_WAIT)
+        val executor = ContextCompat.getMainExecutor(this)
+        for (provider in providers) {
+            try {
+                LocationManagerCompat.getCurrentLocation(manager, provider, signal, executor) { location: Location? ->
+                    waiting--
+                    if (location != null || waiting == 0) answer(location)
+                }
+            } catch (_: Exception) {
+                waiting--
+                if (waiting == 0) answer(null)
+            }
+        }
+    }
+
+    /** En yeni son bilinen konum; [LOCATION_FRESH]'ten eskiyse başka bir yerde alınmış olabilir. */
+    @SuppressLint("MissingPermission")
+    private fun lastKnown(manager: LocationManager, providers: List<String>): Location? {
+        val now = SystemClock.elapsedRealtimeNanos()
+        return providers.mapNotNull { runCatching { manager.getLastKnownLocation(it) }.getOrNull() }
+            .filter { (now - it.elapsedRealtimeNanos) / 1_000_000 <= LOCATION_FRESH }
+            .maxByOrNull { it.elapsedRealtimeNanos }
     }
 
     // ------------------------------------------------------------ dosya seçme
@@ -543,5 +651,10 @@ class MainActivity : FlutterActivity() {
         private const val FOLDER_REQUEST = 4713
         private const val DOCUMENTS_REQUEST = 4714
         private const val IMAGES_REQUEST = 4715
+        private const val LOCATION_REQUEST = 4716
+
+        /** Konum en çok bu kadar beklenir (ms); son bilinen konum en çok bu kadar eski olabilir. */
+        private const val LOCATION_WAIT = 30_000L
+        private const val LOCATION_FRESH = 2 * 60_000L
     }
 }

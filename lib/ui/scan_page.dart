@@ -1,10 +1,12 @@
 import 'dart:async';
 
+import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../data/node.dart';
+import '../services/image_service.dart';
+import '../services/platform_bridge.dart';
 import '../services/qr_service.dart';
 import '../state/inventory_store.dart';
 import '../core/theme.dart';
@@ -28,31 +30,41 @@ class ScanPage extends StatefulWidget {
   /// tarayıcısında da görünüyordu; sayımda okutulanları sayım listesine değil doğrudan kayıtlara yazıyordu.
   final bool serialCount;
 
-  /// Ürün barkodu sayılan biçimler. Sağlaması olanlar (EAN/UPC, Code 128) ve
-  /// etiketlerde yaygın Code 39; sağlamasız ITF ve Codabar yanlış okunabildiği
-  /// için yok.
-  static const productFormats = [
-    BarcodeFormat.ean13,
-    BarcodeFormat.ean8,
-    BarcodeFormat.upcA,
-    BarcodeFormat.upcE,
-    BarcodeFormat.code128,
-    BarcodeFormat.code39,
-  ];
+  /// Ürün barkodu sayılan biçimler (zxing-cpp'nin adlarıyla). Sağlaması olanlar (EAN/UPC, Code 128) ve
+  /// etiketlerde yaygın Code 39 (standart: genişletilmiş yorumu ve eczane türevleri okunmaz); sağlamasız
+  /// ITF ve Codabar yanlış okunabildiği için yok.
+  static const productFormats = ['EAN_13', 'EAN_8', 'UPC_A', 'UPC_E', 'CODE_128', 'CODE_39_STD'];
+
+  /// Kartların QR etiketi: standart QR (Micro QR ve rMQR'a bakılmaz).
+  static const qrFormat = 'QR_CODE_MODEL_2';
 
   @override
   State<ScanPage> createState() => _ScanPageState();
 }
 
+/// Kameranın açılamama nedeni: izin verilmediyse "yeniden dene" düğmesi yok (izin ayarlardan verilir).
+enum _CameraProblem { permission, busy }
+
 class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
-  /// Başlatmayı kendimiz yönetiyoruz: kamera, önceki ekrandan ya da uygulama
-  /// arka plandan dönerken hâlâ açık olabiliyor ve üst üste gelen start()
-  /// çağrıları "zaten çalışıyor" hatası veriyordu.
-  late final _controller = MobileScannerController(
-    detectionSpeed: DetectionSpeed.noDuplicates,
-    formats: [if (!widget.barcodeOnly) BarcodeFormat.qrCode, ...ScanPage.productFormats],
-    autoStart: false,
-  );
+  /// Kamera `camera` eklentisiyle açılır (seri eklemedeki gibi), kareleri yerel taraftaki zxing-cpp okur.
+  /// Önceki tarayıcının ML Kit'i (mobile_scanner) kapalı kaynaktı: uygulama F-Droid'e giremiyordu, Google'a
+  /// kullanım ölçümü de gönderiyordu. Başlatmayı kendimiz yönetiyoruz: kamera, önceki ekrandan ya da
+  /// uygulama arka plandan dönerken hâlâ açık olabiliyor.
+  CameraController? _camera;
+  CameraLensDirection _lens = CameraLensDirection.back;
+  _CameraProblem? _problem;
+  bool _torch = false;
+
+  /// Uygulama arka planda: o sırada açılışı biten kamera hemen bırakılır.
+  bool _away = false;
+
+  /// Kareyi dikleştiren açı (kameranın sensör yönü, telefon dikken); öteki yönleri okuyucu kendisi dener.
+  int _rotation = 90;
+  late final _formats = [if (!widget.barcodeOnly) ScanPage.qrFormat, ...ScanPage.productFormats];
+
+  /// Bir kare okunurken gelenler atlanır: yerel taraf hep yeni kareyle uğraşsın, kuyruk birikmesin.
+  bool _reading = false;
+  final _seen = SeenCodes();
 
   bool _handled = false;
   bool _sawForeignCode = false;
@@ -83,31 +95,117 @@ class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
   }
 
   /// Kamerayı açar. Önce önceki ekranın kamerayı bırakması beklenir; yine de
-  /// tutulu kalmışsa durdurup birkaç kez yeniden denenir (kamera bırakılması
+  /// tutulu kalmışsa birkaç kez yeniden denenir (kamera bırakılması
   /// yerel tarafta birkaç yüz milisaniye sürebiliyor).
   Future<void> _start({int attempt = 0}) async {
-    if (_starting || !mounted) return;
+    if (_starting || !mounted || _handled || _camera != null) return;
     _starting = true;
+    CameraController? camera;
     try {
       await _cameraReleased;
       if (!mounted) return;
-      await _controller.start();
-    } on MobileScannerException catch (e) {
-      final hopeless = e.errorCode == MobileScannerErrorCode.permissionDenied ||
-          e.errorCode == MobileScannerErrorCode.unsupported;
-      if (hopeless || attempt >= 3 || !mounted) return;
+      if (!await ImageService.ensureCamera()) {
+        if (mounted) setState(() => _problem = _CameraProblem.permission);
+        return;
+      }
+      final cameras = await availableCameras();
+      if (cameras.isEmpty) throw CameraException('none', 'no camera');
+      final description = cameras.firstWhere((c) => c.lensDirection == _lens, orElse: () => cameras.first);
+      // 720p: küçük barkod da okunur; her kare yerel tarafa gidip geldiği için daha büyüğü boşuna yük.
+      camera = CameraController(
+        description,
+        ResolutionPreset.high,
+        enableAudio: false,
+        imageFormatGroup: ImageFormatGroup.yuv420,
+      );
+      await camera.initialize();
+      if (!mounted || _handled || _away) {
+        _release(camera);
+        return;
+      }
+      _rotation = description.sensorOrientation;
+      await camera.startImageStream(_onFrame);
+      setState(() {
+        _camera = camera;
+        _problem = null;
+        _torch = false;
+      });
+    } on Object catch (e) {
+      if (camera != null) _release(camera);
+      final denied = e is CameraException && e.code == 'CameraAccessDenied';
+      if (denied || attempt >= 3 || !mounted) {
+        if (mounted) setState(() => _problem = denied ? _CameraProblem.permission : _CameraProblem.busy);
+        return;
+      }
       _starting = false;
       await Future<void>.delayed(Duration(milliseconds: 200 * (attempt + 1)));
       if (!mounted) return;
-      try {
-        await _controller.stop();
-      } on MobileScannerException {
-        // Zaten durmuş olabilir.
-      }
-      return _start(attempt: attempt + 1);
+      await _start(attempt: attempt + 1);
     } finally {
       _starting = false;
     }
+  }
+
+  /// Kamerayı bırakır; sonraki tarayıcı ([_cameraReleased]) bitmesini bekler.
+  void _release(CameraController camera) {
+    _cameraReleased = () async {
+      try {
+        if (camera.value.isStreamingImages) await camera.stopImageStream();
+      } on Object {
+        // Akış zaten durmuş olabilir.
+      }
+      try {
+        await camera.dispose();
+      } on Object {
+        // Zaten bırakılmış.
+      }
+    }();
+  }
+
+  /// Kamerayı kapatır (arka plana geçerken, kamera değişirken, çıkarken).
+  void _stop() {
+    final camera = _camera;
+    if (camera == null) return;
+    _camera = null;
+    _torch = false;
+    _release(camera);
+    if (mounted) setState(() {});
+  }
+
+  /// Fener; ön kamerada ya da fenersiz telefonda hiçbir şey olmaz.
+  Future<void> _toggleTorch() async {
+    final camera = _camera;
+    if (camera == null) return;
+    try {
+      await camera.setFlashMode(_torch ? FlashMode.off : FlashMode.torch);
+      if (mounted) setState(() => _torch = !_torch);
+    } on Object {
+      // Fener yok.
+    }
+  }
+
+  /// Ön ve arka kamera arasında geçer.
+  Future<void> _switchCamera() async {
+    _lens = _lens == CameraLensDirection.back ? CameraLensDirection.front : CameraLensDirection.back;
+    _stop();
+    await _start();
+  }
+
+  /// Kameranın karesi: yalnızca parlaklık düzlemi (Y) okunmaya gider, kod okumak için renk gerekmez.
+  void _onFrame(CameraImage image) {
+    if (_reading || _handled || image.planes.isEmpty) return;
+    final plane = image.planes.first;
+    _reading = true;
+    unawaited(PlatformBridge.readBarcodes(
+      bytes: plane.bytes,
+      width: image.width,
+      height: image.height,
+      stride: plane.bytesPerRow,
+      rotation: _rotation,
+      formats: _formats,
+    ).then((codes) {
+      if (mounted && !_handled && codes.isNotEmpty) _onDetect(_seen.fresh(codes, DateTime.now()));
+    }).whenComplete(() => _reading = false));
   }
 
   /// Ekrandan çıkmadan önce kamerayı bırak: bir sonraki tarayıcı beklemesin.
@@ -115,7 +213,8 @@ class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
     final navigator = Navigator.of(context);
     _handled = true;
     _statusTimer?.cancel();
-    await _controller.stop();
+    _stop();
+    await _cameraReleased;
     if (mounted) {
       if (_serialCount > 0) {
         final messenger = ScaffoldMessenger.of(context);
@@ -131,10 +230,12 @@ class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
     if (!mounted || _handled) return;
     switch (state) {
       case AppLifecycleState.resumed:
+        _away = false;
         unawaited(_start());
       case AppLifecycleState.inactive:
         // Arka planda kamera bırakılmaz; dönünce yeniden açılır.
-        unawaited(_controller.stop());
+        _away = true;
+        _stop();
       case AppLifecycleState.paused:
       case AppLifecycleState.detached:
       case AppLifecycleState.hidden:
@@ -147,22 +248,23 @@ class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
     _statusTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     // Sonraki tarayıcı, kamera gerçekten bırakılana kadar beklesin.
-    _cameraReleased = _controller.dispose().catchError((Object _) {});
+    final camera = _camera;
+    _camera = null;
+    if (camera != null) _release(camera);
     super.dispose();
   }
 
-  void _onDetect(BarcodeCapture capture) {
+  void _onDetect(List<({String text, bool qr})> codes) {
     if (_handled) return;
     if (_serialMode) {
       final store = InventoryScope.read(context);
       final s = store.strings;
-      for (final barcode in capture.barcodes) {
-        final raw = barcode.rawValue;
-        if (raw == null) continue;
+      for (final barcode in codes) {
+        final raw = barcode.text;
         String? text;
         Node? matchNode;
 
-        if (ScanPage.productFormats.contains(barcode.format)) {
+        if (!barcode.qr) {
           text = Node.cleanBarcode(raw);
           if (text != null) {
             final matches = store.byBarcode(text);
@@ -209,10 +311,9 @@ class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
       return;
     }
 
-    for (final barcode in capture.barcodes) {
-      final raw = barcode.rawValue;
-      if (raw == null) continue;
-      if (ScanPage.productFormats.contains(barcode.format)) {
+    for (final barcode in codes) {
+      final raw = barcode.text;
+      if (!barcode.qr) {
         final text = Node.cleanBarcode(raw);
         if (text == null) continue;
         unawaited(_close(ScannedCode.barcode(text)));
@@ -257,11 +358,11 @@ class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
           IconButton(
             icon: const Icon(Icons.flashlight_on_rounded),
             tooltip: 'Flash',
-            onPressed: _controller.toggleTorch,
+            onPressed: () => unawaited(_toggleTorch()),
           ),
           IconButton(
             icon: const Icon(Icons.cameraswitch_rounded),
-            onPressed: _controller.switchCamera,
+            onPressed: () => unawaited(_switchCamera()),
           ),
         ],
       ),
@@ -269,38 +370,7 @@ class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
       body: Stack(
         fit: StackFit.expand,
         children: [
-          MobileScanner(
-            controller: _controller,
-            onDetect: _onDetect,
-            // Ham hata metni kullanıcıya bir şey anlatmıyor; nedenine göre
-            // kendi cümlemizi ve bir "yeniden dene" düğmesini gösteriyoruz.
-            errorBuilder: (context, error) => Center(
-              child: Padding(
-                padding: const EdgeInsets.all(32),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      switch (error.errorCode) {
-                        MobileScannerErrorCode.permissionDenied => s.cameraPermissionNeeded,
-                        MobileScannerErrorCode.unsupported => s.cameraBusy,
-                        _ => s.cameraBusy,
-                      },
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(color: Colors.white, fontSize: 15),
-                    ),
-                    if (error.errorCode != MobileScannerErrorCode.permissionDenied) ...[
-                      const SizedBox(height: 16),
-                      FilledButton.tonal(
-                        onPressed: () => unawaited(_start()),
-                        child: Text(s.retry),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ),
-          ),
+          _preview(context),
           const _ScanFrame(),
           if (_serialMode)
             Positioned(
@@ -381,6 +451,95 @@ class _ScanPageState extends State<ScanPage> with WidgetsBindingObserver {
         ],
       ),
     );
+  }
+
+  /// Önizleme ekranı doldurur (kadraj ortada); kamera açılamadıysa nedeni ve "yeniden dene".
+  Widget _preview(BuildContext context) {
+    final camera = _camera;
+    if (camera != null && camera.value.isInitialized) {
+      return ValueListenableBuilder<CameraValue>(
+        valueListenable: camera,
+        builder: (context, value, child) {
+          final size = value.previewSize;
+          if (size == null) return Center(child: child);
+          // Önizlemenin boyutu kameranın yatay yönünde. Hangi yönde çizileceğine CameraPreview'un
+          // kendisi gibi karar verilir; yoksa kutu önizlemeye uymaz, ekran dolmaz.
+          final turned = value.previewPauseOrientation ?? value.lockedCaptureOrientation ?? value.deviceOrientation;
+          final landscape =
+              turned == DeviceOrientation.landscapeLeft || turned == DeviceOrientation.landscapeRight;
+          return ClipRect(
+            child: FittedBox(
+              fit: BoxFit.cover,
+              child: SizedBox(
+                width: landscape ? size.width : size.height,
+                height: landscape ? size.height : size.width,
+                child: child,
+              ),
+            ),
+          );
+        },
+        child: CameraPreview(camera),
+      );
+    }
+    final problem = _problem;
+    if (problem == null) return const SizedBox.shrink();
+    final s = InventoryScope.of(context).strings;
+    // Ham hata metni kullanıcıya bir şey anlatmıyor; nedenine göre
+    // kendi cümlemizi ve bir "yeniden dene" düğmesini gösteriyoruz.
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              problem == _CameraProblem.permission ? s.cameraPermissionNeeded : s.cameraBusy,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.white, fontSize: 15),
+            ),
+            if (problem != _CameraProblem.permission) ...[
+              const SizedBox(height: 16),
+              FilledButton.tonal(
+                onPressed: () {
+                  setState(() => _problem = null);
+                  unawaited(_start());
+                },
+                child: Text(s.retry),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Kameranın gördüğü kodlar. Görüş alanında duran kod her karede yeniden okunur; yalnızca bir süre
+/// ([gone]) okunmadıktan sonra yeniden görününce yeni sayılır. Önceki tarayıcının "aynısını bir daha
+/// bildirme" kuralı son okunanı kod gözden çıkınca da unutmuyordu: seri sayımda aynı üründen ikinci tane,
+/// arada başka bir kod okutulmadan hiç sayılmıyordu.
+@visibleForTesting
+class SeenCodes {
+  static const gone = Duration(seconds: 1);
+
+  final _at = <String, DateTime>{};
+
+  /// [codes]'dan yeni görünenler; hepsinin son görülme anı [now] olur.
+  List<({String text, bool qr})> fresh(List<({String text, bool qr})> codes, DateTime now) {
+    final fresh = [
+      for (final code in codes)
+        if (!_recent(code.text, now)) code,
+    ];
+    for (final code in codes) {
+      _at[code.text] = now;
+    }
+    _at.removeWhere((_, at) => now.difference(at) >= gone * 10);
+    return fresh;
+  }
+
+  bool _recent(String text, DateTime now) {
+    final at = _at[text];
+    return at != null && now.difference(at) < gone;
   }
 }
 

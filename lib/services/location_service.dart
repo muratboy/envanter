@@ -1,5 +1,6 @@
 import 'package:geocoding/geocoding.dart';
-import 'package:geolocator/geolocator.dart';
+
+import 'platform_bridge.dart';
 
 class GeoResult {
   const GeoResult(this.lat, this.lng, this.label);
@@ -17,29 +18,26 @@ enum LocationFailure implements Exception {
 }
 
 class LocationService {
-  /// Izin ister, konumu alir ve mümkünse adrese çevirir.
+  /// Izin ister, konumu alir ve mümkünse adrese çevirir. Konum ve izin yerel tarafta, Android'in kendi
+  /// konum hizmetinden (geolocator Google Play Hizmetleri'nin kapalı kaynak kütüphanesini getiriyordu).
+  /// Başarısızlık her zaman [LocationFailure]: arayüz yalnızca onu yakalıyor.
   static Future<GeoResult> current() async {
-    if (!await Geolocator.isLocationServiceEnabled()) {
-      throw LocationFailure.serviceOff;
+    final fix = await PlatformBridge.currentLocation();
+    final lat = fix['lat'];
+    final lng = fix['lng'];
+    if (lat is! double || lng is! double) {
+      throw switch (fix['error']) {
+        'off' => LocationFailure.serviceOff,
+        'denied' => LocationFailure.denied,
+        'deniedForever' => LocationFailure.deniedForever,
+        _ => LocationFailure.unknown,
+      };
     }
-    var permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-    }
-    if (permission == LocationPermission.denied) {
-      throw LocationFailure.denied;
-    }
-    if (permission == LocationPermission.deniedForever) {
-      throw LocationFailure.deniedForever;
-    }
-
-    final pos = await Geolocator.getCurrentPosition(
-      locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
-    );
-    return GeoResult(pos.latitude, pos.longitude, await describe(pos.latitude, pos.longitude));
+    return GeoResult(lat, lng, await describe(lat, lng));
   }
 
-  /// Ters coğrafi kodlama başarısız olabilir; o zaman etiket boş kalir.
+  /// Ters coğrafi kodlama başarısız olabilir; o zaman etiket boş kalir. Eklentisi hiç yüklenemediyse
+  /// `Geocoding()` bir Error fırlatıyor: o da yakalanır, bulunan konum adressiz de olsa döner.
   static Future<String?> describe(double lat, double lng) async {
     try {
       final geocoding = Geocoding();
@@ -55,7 +53,7 @@ class LocationService {
       ].where((s) => s != null && s.trim().isNotEmpty).cast<String>().toList();
       if (parts.isEmpty) return null;
       return parts.take(3).join(', ');
-    } on Exception {
+    } on Object {
       return null;
     }
   }

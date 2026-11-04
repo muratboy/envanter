@@ -83,4 +83,8 @@ flutter {
 
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
+    // Tarayıcının kod okuyucusu (QR ve ürün barkodları; PlatformCalls "readBarcodes"): zxing-cpp,
+    // Apache-2.0. Önceki tarayıcının ML Kit'i kapalı kaynaktı: uygulama F-Droid'e giremiyordu,
+    // Google'a kullanım ölçümü de gönderiyordu.
+    implementation("io.github.zxing-cpp:android:3.1.1")
 }

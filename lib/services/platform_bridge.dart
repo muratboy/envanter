@@ -231,6 +231,50 @@ class PlatformBridge {
     }
   }
 
+  /// Tarayıcı: kameranın bir karesindeki kodları yerel taraftaki zxing-cpp okur. [bytes] karenin parlaklık
+  /// düzlemi (YUV'nin Y'si), [stride] bir satırının bayt sayısı, [rotation] kareyi dikleştiren açı, [formats]
+  /// zxing-cpp'nin biçim adları. `qr`: QR mı, ürün barkodu mu. Okunamazsa (ya da yerel taraf yoksa) boş.
+  static Future<List<({String text, bool qr})>> readBarcodes({
+    required Uint8List bytes,
+    required int width,
+    required int height,
+    required int stride,
+    required int rotation,
+    required List<String> formats,
+  }) async {
+    try {
+      final args = {
+        'bytes': bytes,
+        'width': width,
+        'height': height,
+        'stride': stride,
+        'rotation': rotation,
+        'formats': formats,
+      };
+      final list = await _channel.invokeListMethod<Object?>('readBarcodes', args);
+      return [
+        for (final e in list ?? const [])
+          if (e is Map && e['text'] is String) (text: e['text'] as String, qr: e['qr'] == true),
+      ];
+    } on PlatformException {
+      return const [];
+    } on MissingPluginException {
+      return const [];
+    }
+  }
+
+  /// Konum (Android'in kendi konum hizmeti; izni de o sorar). Haritada `lat` ve `lng` ya da `error`: "off"
+  /// (konum kapalı), "denied", "deniedForever" (bir daha sorulamıyor), "unavailable" (konum bulunamadı).
+  static Future<Map<String, Object?>> currentLocation() async {
+    try {
+      return await _channel.invokeMapMethod<String, Object?>('currentLocation') ?? const {'error': 'unavailable'};
+    } on PlatformException {
+      return const {'error': 'unavailable'};
+    } on MissingPluginException {
+      return const {'error': 'unavailable'};
+    }
+  }
+
   /// Dosyayı o türü açan uygulamada açar; [name] orada görünen addır. Açan
   /// uygulama yoksa false.
   static Future<bool> openFile(String path, String? mime, {String? name}) async {

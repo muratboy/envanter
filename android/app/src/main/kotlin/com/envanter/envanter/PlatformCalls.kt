@@ -7,6 +7,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.ImageDecoder
 import android.graphics.Matrix
+import android.graphics.Rect
 import android.graphics.pdf.PdfRenderer
 import android.media.ExifInterface
 import android.media.MediaMetadataRetriever
@@ -21,8 +22,10 @@ import android.provider.Settings
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import java.io.File
+import java.nio.ByteBuffer
 import java.util.concurrent.Executors
 import kotlin.math.roundToInt
+import zxingcpp.BarcodeReader
 
 /**
  * Etkinlik gerektirmeyen yerel işler: hem uygulamanın kendi motoru
@@ -35,6 +38,9 @@ object PlatformCalls {
 
     /** Galeriden alınan fotoğraflar birkaç tane birden küçültülür (her biri ayrı bir çekirdekte). */
     private val imports = Executors.newFixedThreadPool(3)
+
+    /** Tarayıcının kareleri tek tek okunur: Dart bir sonrakini ancak yanıt gelince yollar. */
+    private val scans = Executors.newSingleThreadExecutor()
 
     /** Kanal çağrısını karşıladıysa true. */
     fun handle(context: Context, call: MethodCall, result: MethodChannel.Result): Boolean {
@@ -79,6 +85,19 @@ object PlatformCalls {
                 imports.execute {
                     val ok = uri != null && out != null && importImage(context, Uri.parse(uri), File(out), max, quality)
                     main.post { result.success(ok) }
+                }
+            }
+            // Tarayıcı: kameranın bir karesindeki kodlar.
+            "readBarcodes" -> {
+                val bytes = call.argument<ByteArray>("bytes")
+                val width = call.argument<Int>("width") ?: 0
+                val height = call.argument<Int>("height") ?: 0
+                val stride = call.argument<Int>("stride") ?: width
+                val rotation = call.argument<Int>("rotation") ?: 0
+                val formats = call.argument<List<String>>("formats") ?: emptyList()
+                scans.execute {
+                    val found = bytes?.let { readBarcodes(it, width, height, stride, rotation, formats) } ?: emptyList()
+                    main.post { result.success(found) }
                 }
             }
             // Saat ağdan mı geliyor: eşitlemede yanlış saatli telefonu bulmak için.
@@ -265,6 +284,75 @@ object PlatformCalls {
         var sample = 1
         while (maxOf(w, h) / (sample * 2) >= max) sample *= 2
         return sample
+    }
+
+    // ------------------------------------------------------------ kod okuma
+
+    /** Okuyucu ve kare tamponları yalnızca [scans] iş parçacığında; okuyucu biçimler değişince kurulur. */
+    private var reader: BarcodeReader? = null
+    private var readerFormats: List<String> = emptyList()
+    private var frame: Bitmap? = null
+    private var frameRows: ByteBuffer? = null
+
+    /**
+     * Bir karedeki kodlar (zxing-cpp; önceki tarayıcının ML Kit'i kapalı kaynaktı). Kare, kameranın parlaklık
+     * düzlemi (YUV'nin Y'si): gri tonlu (ALPHA_8) bir bitmap'e kopyalanır, zxing-cpp onu gri ton olarak okur.
+     * [rotation] telefon dikken kareyi dikleştirir; yatık tutulan barkodu okuyucu kendisi döndürüp dener.
+     * QR mı ürün barkodu mu, biçim kodunun son baytından ('Q'): kütüphane hep ailenin belirli bir türüyle
+     * döner (QR_CODE_MODEL_2, CODE_39_STD...), aile adıyla değil.
+     */
+    private fun readBarcodes(
+        bytes: ByteArray,
+        width: Int,
+        height: Int,
+        stride: Int,
+        rotation: Int,
+        formats: List<String>,
+    ): List<Map<String, Any>> {
+        if (width <= 0 || height <= 0 || stride < width) return emptyList()
+        if (bytes.size < stride * (height - 1) + width) return emptyList()
+        return try {
+            val bitmap = frame?.takeIf { it.width == width && it.height == height }
+                ?: Bitmap.createBitmap(width, height, Bitmap.Config.ALPHA_8).also { frame = it }
+            val rowBytes = bitmap.rowBytes
+            val size = rowBytes * height
+            // Satır payı aynıysa kare olduğu gibi kopyalanır; değilse satır satır (son satırda pay olmayabilir).
+            val rows = if (stride == rowBytes && bytes.size >= size) ByteBuffer.wrap(bytes, 0, size) else {
+                val packed = frameRows?.takeIf { it.capacity() == size }
+                    ?: ByteBuffer.allocate(size).also { frameRows = it }
+                packed.clear()
+                for (y in 0 until height) {
+                    packed.position(y * rowBytes)
+                    packed.put(bytes, y * stride, width)
+                }
+                packed.rewind()
+                packed
+            }
+            bitmap.copyPixelsFromBuffer(rows)
+            readerFor(formats).read(bitmap, Rect(), rotation).mapNotNull { code ->
+                code.text?.let { mapOf("text" to it, "qr" to ((code.format.value and 0xFF) == 'Q'.code)) }
+            }
+        } catch (_: Exception) {
+            emptyList()
+        } catch (_: OutOfMemoryError) {
+            emptyList()
+        } catch (_: UnsatisfiedLinkError) {
+            emptyList()
+        }
+    }
+
+    private fun readerFor(formats: List<String>): BarcodeReader {
+        reader?.takeIf { formats == readerFormats }?.let { return it }
+        val chosen = formats.mapNotNull { name -> BarcodeReader.Format.entries.firstOrNull { it.name == name } }.toSet()
+        // Okuyucunun hız için kapalı gelen denemeleri açılır: zor kodu daha çok uğraşarak arar, yatık barkodu
+        // döndürüp dener, yakından tutulan büyük kodu küçültüp bulur. Ters renkli kod (koyu üstüne açık)
+        // aranmaz: iş iki katına çıkar, etiketlerde hemen hiç yok.
+        val created = BarcodeReader(
+            BarcodeReader.Options(formats = chosen, tryHarder = true, tryRotate = true, tryDownscale = true),
+        )
+        reader = created
+        readerFormats = formats
+        return created
     }
 
     // ------------------------------------------------------------ otomatik yedek

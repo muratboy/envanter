@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.3.2+24
+version: 1.3.2+25
 
 environment:
   sdk: ^3.13.3
@@ -40,11 +40,12 @@ dependencies:
   image_picker: ^1.2.3
   qr_flutter: ^4.1.0
   share_plus: ^13.3.0
-  geolocator: ^14.0.3
+  # Konumun adresi (Android'in kendi Geocoder'ı). Konumun kendisi yerel kodda (MainActivity):
+  # geolocator Google Play Hizmetleri'nin kapalı kaynak konum kütüphanesini getiriyordu.
   geocoding: ^5.0.0
-  mobile_scanner: ^7.4.2
   # Seri ekleme: kamera açık kalır, art arda fotoğraf çekilir (image_picker her çekimde
-  # sistem kamerasını kapatıp açıyor, her fotoğraf ayrıca onaylanıyordu).
+  # sistem kamerasını kapatıp açıyor, her fotoğraf ayrıca onaylanıyordu). Tarayıcı da
+  # kareleri bundan alır; kodları yerel taraftaki zxing-cpp okur (android/app/build.gradle.kts).
   camera: ^0.12.1
   image: ^4.10.1
   crypto: ^3.0.7
