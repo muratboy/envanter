@@ -1009,3 +1009,15 @@ porta açılır; simülatör "EŞİTLENEMEDİ" derse portu yeniden bulup `adb fo
 - Video uygulamanın içinde oynatılmaz; telefonun oynatıcısı açılır.
 - Kapalı envanterler yalnızca arka planda eşitlenir (uygulama önde değilken, Wi-Fi'de,
   yaklaşık yarım saatte bir); uygulamayı kullanırken yalnızca açık olan envanter eşitlenir.
+
+## Lisans
+
+Telif hakkı © 2026 Murat Boy
+
+Envanter özgür yazılımdır: Özgür Yazılım Vakfı'nın yayımladığı GNU Genel Kamu Lisansı'nın
+3. sürümünün (GPL-3.0) koşullarıyla yeniden dağıtılabilir ve değiştirilebilir. Yararlı
+olması umuduyla dağıtılır, ama hiçbir garantisi yoktur; satılabilirlik ya da belirli bir
+amaca uygunluk garantisi de yoktur. Lisansın tam metni [LICENSE](LICENSE) dosyasında.
+
+Uygulamayla gelen Manrope ve Fraunces yazı tipleri kendi lisanslarıyla, SIL Open Font
+License 1.1 ile dağıtılır (`assets/fonts/*-OFL.txt`).
