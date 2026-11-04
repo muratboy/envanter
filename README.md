@@ -1,3 +1,5 @@
+<img src="fastlane/metadata/android/en-US/images/icon.png" alt="Envanter simgesi" width="96" align="right">
+
 # Envanter
 
 Ev, atölye, depo ya da küçük bir kütüphane için görsel envanter uygulaması.
@@ -5,6 +7,18 @@ Flutter ile yazıldı, şu an Android'de çalışıyor. Sunucu yok: veriler ciha
 istenirse aynı Wi-Fi'deki kişilerle ortak kullanılır.
 Arayüz Türkçe ve İngilizce; Ayarlar'dan seçilir ya da cihaz dilini izler.
 Telefonda ve tablette, dikey ve yatay çalışır.
+
+<p align="center">
+  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/2.png" width="30%"
+       alt="Bir klasörün içi: deste görünümünde üst üste binen klasör kartları">
+  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/1.png" width="30%"
+       alt="Kütüphane envanterinin ana ekranı: ızgara görünümünde kitap kapakları">
+  <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/3.png" width="30%"
+       alt="Sol menü: paneller, sayfalar ve toplam kayıt sayısı">
+</p>
+
+<p align="center"><sub>Soldan sağa: ızgara görünümünde bir kütüphane, deste görünümünde bir klasörün
+içi ve sol menü (son ikisi İngilizce arayüzle).</sub></p>
 
 ## Temel fikir
 
@@ -894,6 +908,8 @@ lib/
 assets/fonts/  Manrope (arayüz) ve Fraunces (başlık), OFL lisanslı sabit kopyalar
 tool/
   lan_peer_sim.dart  emülatörle denemek için bilgisayarda çalışan ikinci "telefon"
+  simge.py           uygulama simgelerinin tek kaynağı: Android kaynaklarını ve mağaza simgesini çizer
+fastlane/      mağaza sayfası görselleri (simge, ekran görüntüleri); README de bunları gösterir
 ```
 
 `InventoryStore` bütün ağacı bellekte tutar ve `ChangeNotifier` olarak yayınlar;

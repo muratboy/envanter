@@ -10,6 +10,7 @@ Yazdıkları (android/app/src/main/res altında):
   drawable/ic_splash.xml                Android 12 öncesi açılış ekranındaki simge
   drawable/ic_stat_envanter.xml         bildirim çubuğundaki küçük simge (aynı biçim)
   mipmap-*/ic_launcher.png              Android 7'nin (API 24–25) düz simgesi
+fastlane/metadata/android/en-US/images/icon.png  mağaza sayfasının ve README'nin simgesi (512 px)
 ve build/simge/ altında önizlemeler (SVG + PNG).
 
 Neden elle çizim değil de bu betik: SVG önizlemesi ile cihazdaki vektör aynı veriden çıksın
@@ -24,6 +25,8 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RES = os.path.join(ROOT, 'android', 'app', 'src', 'main', 'res')
 PREVIEW = os.path.join(ROOT, 'build', 'simge')
+# F-Droid sayfa görsellerini bu klasörden okur; README de aynı dosyayı gösterir.
+STORE_ICON = os.path.join(ROOT, 'fastlane', 'metadata', 'android', 'en-US', 'images', 'icon.png')
 
 # ---------------------------------------------------------------- renkler
 
@@ -512,6 +515,15 @@ def main():
             f.write(svg([shadow] + tile, px))
         subprocess.run(['rsvg-convert', '-w', str(px), '-h', str(px), src, '-o', out], check=True)
         print('  ' + os.path.relpath(out, ROOT))
+    # Mağaza ve README simgesi: maske uygulanmadan, sayfanın kendi zemininde gösterilir; yumuşak köşeli
+    # kare, gölgesiz (512 px mağazaların beklediği boy). SVG'si önizlemelerin yanına: depoya yalnızca PNG.
+    print('Mağaza ve README:')
+    src = os.path.join(PREVIEW, 'magaza.svg')
+    with open(src, 'w') as f:
+        f.write(svg(launcher_tile(), 108))
+    os.makedirs(os.path.dirname(STORE_ICON), exist_ok=True)
+    subprocess.run(['rsvg-convert', '-w', '512', '-h', '512', src, '-o', STORE_ICON], check=True)
+    print('  ' + os.path.relpath(STORE_ICON, ROOT))
     # Önizlemeler: tam katmanlar (432 px = 108 birim × 4).
     render(svg(background() + foreground(), 108), os.path.join(PREVIEW, 'tam.png'), 432)
     render(svg([Shape(rrect(0, 0, 108, 108, 0), '#30343C')] + silhouette(gap=1.6), 108),
