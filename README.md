@@ -1,6 +1,8 @@
-<img src="fastlane/metadata/android/en-US/images/icon.png" alt="Envanter simgesi" width="96" align="right">
+<p align="center">
+  <img src="fastlane/metadata/android/en-US/images/icon.png" alt="Envanter simgesi" width="112">
+</p>
 
-# Envanter
+<h1 align="center">Envanter</h1>
 
 Ev, atölye, depo ya da küçük bir kütüphane için görsel envanter uygulaması.
 Flutter ile yazıldı, şu an Android'de çalışıyor. Sunucu yok: veriler cihazda tutulur,
@@ -17,8 +19,8 @@ Telefonda ve tablette, dikey ve yatay çalışır.
        alt="Sol menü: paneller, sayfalar ve toplam kayıt sayısı">
 </p>
 
-<p align="center"><sub>Soldan sağa: ızgara görünümünde bir kütüphane, deste görünümünde bir klasörün
-içi ve sol menü (son ikisi İngilizce arayüzle).</sub></p>
+<p align="center"><sub>Soldan sağa: deste görünümünde bir klasörün içi, ızgara görünümünde bir kütüphane
+ve sol menü (birincisi ve sonuncusu İngilizce arayüzle).</sub></p>
 
 ## Temel fikir
 
