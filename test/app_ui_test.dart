@@ -4162,8 +4162,11 @@ void main() {
       await boot(tester);
       late String dolap;
       late String sut;
-      final early = DateTime(2026, 11, 5);
-      final later = DateTime(2026, 11, 12);
+      // Tarihler bugüne göre: sabit tarih geçince en eski paket "tarihi geçmiş" sayılıyor, eksilen ondan değil
+      // sonrakinden düşülüyordu (test takvime bağlı düşüyordu).
+      final now = DateTime.now();
+      final early = DateTime(now.year, now.month, now.day + 5);
+      final later = DateTime(now.year, now.month, now.day + 12);
       await tester.runAsync(() async {
         final d = store.draft(parentId: Roots.home, kind: NodeKind.container).copyWith(name: 'Dolap');
         await store.commit(d);
