@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:envanter/core/app_paths.dart';
+import 'package:envanter/core/palette.dart';
 import 'package:envanter/core/strings.dart';
 import 'package:envanter/data/database.dart';
 import 'package:envanter/data/lots.dart';
@@ -98,11 +99,40 @@ void main() {
     });
   });
 
-  test('aynı seviyedeki kartlar farklı renk alır', () async {
-    final a = await add(Roots.home, NodeKind.container);
-    final b = await add(Roots.home, NodeKind.container);
-    final c = await add(Roots.home, NodeKind.container);
-    expect({a.color, b.color, c.color}.length, 3);
+  group('otomatik renk', () {
+    test('aynı seviyedeki kartlar farklı renk alır', () async {
+      final a = await add(Roots.home, NodeKind.container);
+      final b = await add(Roots.home, NodeKind.container);
+      final c = await add(Roots.home, NodeKind.container);
+      expect({a.color, b.color, c.color}.length, 3);
+    });
+
+    test('paletin bütün renkleri kullanılınca da renk sabitlenmez: en az kullanılan, önündekinden farklı', () async {
+      final colors = <int>[];
+      for (var i = 0; i < kCardPalette.length * 2 + 5; i++) {
+        colors.add((await add(Roots.home, NodeKind.item)).color);
+      }
+      // Eskiden 16. karttan sonra hepsi paletin ilk rengini alıyordu.
+      final counts = [for (final c in kCardPalette) colors.where((v) => v == c.toARGB32()).length]..sort();
+      expect(counts.last - counts.first, lessThanOrEqualTo(1), reason: 'her renk eşit sayıda');
+      for (var i = 1; i < colors.length; i++) {
+        expect(colors[i], isNot(colors[i - 1]), reason: '${i + 1}. kart önündekiyle aynı renkte');
+      }
+    });
+
+    test('en seyrek renk önündeki kartınsa sıradaki verilir; klasörler ayrı grupta olduğu için eşyanın önündeki '
+        'son eşya', () async {
+      final palette = [for (final c in kCardPalette) c.toARGB32()];
+      // Son renk dışındakiler ikişer kez; son renk bir kez, en sondaki eşyada.
+      for (final color in [...palette.take(15), ...palette.take(15), palette.last]) {
+        await store.commit(store.draft(parentId: Roots.home, kind: NodeKind.item).copyWith(color: color));
+      }
+      final folder = await add(Roots.home, NodeKind.container);
+      expect(folder.color, isNot(palette.last), reason: 'klasör de önündeki son kardeşten farklı');
+      final next = store.draft(parentId: Roots.home, kind: NodeKind.item).color;
+      expect(next, isNot(palette.last), reason: 'en seyrek renk ama önündeki son eşyanın rengi');
+      expect(next, isNot(folder.color), reason: 'klasörler ayrılmamışsa önündeki klasör');
+    });
   });
 
   group('taşıma', () {

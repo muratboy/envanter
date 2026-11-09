@@ -736,15 +736,38 @@ class InventoryStore extends ChangeNotifier implements SyncTarget {
     return siblings.last.sortIndex + 1;
   }
 
-  /// Ayni seviyedeki kartlar bir bakışta ayırt edilsin diye paletten
-  /// kardeşleri arasinda henuz kullanılmamış ilk renk verilir.
-  int _nextColor(String parentId) {
+  /// Aynı seviyedeki kartlar bir bakışta ayırt edilsin diye paletten kardeşleri arasında en az kullanılan renk
+  /// verilir, eşitlikte palet sırasıyla: önce hiç kullanılmamışlar, hepsi kullanılınca palet aynı sırayla yeniden
+  /// döner (eskiden o noktadan sonra her yeni kart paletin ilk rengini alıyordu). Yeni kartın önünde duracak
+  /// kardeşin rengi verilmez, destede üst üste binerler: kart sona eklenir; önünde klasörler ve eşyalar ayrı
+  /// gruptaysa kendi türünün sonuncusu, ayrı değilse son kardeş durur.
+  int _nextColor(String parentId, NodeKind kind) {
+    final siblings = childrenOf(parentId);
     // Eski paletteki renkler bugünkü karşılıklarıyla sayılır.
-    final used = childrenOf(parentId).map((n) => canonicalCardColor(n.color).toARGB32()).toSet();
-    for (final c in kCardPalette) {
-      if (!used.contains(c.toARGB32())) return c.toARGB32();
+    int colorOf(Node n) => canonicalCardColor(n.color).toARGB32();
+    final counts = <int, int>{};
+    for (final n in siblings) {
+      counts.update(colorOf(n), (v) => v + 1, ifAbsent: () => 1);
     }
-    return kCardPalette[used.length % kCardPalette.length].toARGB32();
+    final neighbors = <int>{if (siblings.isNotEmpty) colorOf(siblings.last)};
+    for (final n in siblings.reversed) {
+      if (n.kind == kind) {
+        neighbors.add(colorOf(n));
+        break;
+      }
+    }
+    var best = kCardPalette.first.toARGB32();
+    int? fewest;
+    for (final c in kCardPalette) {
+      final color = c.toARGB32();
+      if (neighbors.contains(color)) continue;
+      final uses = counts[color] ?? 0;
+      if (fewest == null || uses < fewest) {
+        best = color;
+        fewest = uses;
+      }
+    }
+    return best;
   }
 
   /// Klasörler için bir sonraki boş sayı: 1, 2, 3...
@@ -793,7 +816,7 @@ class InventoryStore extends ChangeNotifier implements SyncTarget {
       kind: kind,
       // Klasörün varsayılan adi var, eşyanın adi boş başlar.
       name: kind == NodeKind.container ? _nextDefaultName(parentId) : '',
-      color: _nextColor(parentId),
+      color: _nextColor(parentId, kind),
       sortIndex: _nextSortIndex(parentId),
       inDrawer: inDrawer,
       createdAt: now,
